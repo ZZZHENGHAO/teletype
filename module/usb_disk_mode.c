@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "flash.h"
@@ -28,8 +29,9 @@
 
 // Local declarations
 void draw_usb_menu_item(uint8_t item_num, const char* text);
-bool tele_usb_disk_write_operation(uint8_t* plun_state, uint8_t* plun);
-void tele_usb_disk_read_operation(void);
+static bool tele_usb_disk_write_operation(uint8_t* plun_state, uint8_t* plun,
+                                          scene_state_t* scene);
+static void tele_usb_disk_read_operation(scene_state_t* scene);
 
 
 // Local functions to implement the usb filesystem serialization contract
@@ -108,6 +110,16 @@ void handler_usb_ScreenRefresh(int32_t data) {
 
 // usb disk mode entry point
 void tele_usb_disk() {
+    if (is_flash_fresh()) {
+        print_dbg("\r\ninitialize scene storage before USB transfer");
+        return;
+    }
+    scene_state_t* scene = malloc(sizeof(*scene));
+    if (!scene) {
+        print_dbg("\r\nnot enough memory for USB scene transfer");
+        return;
+    }
+
     print_dbg("\r\nusb");
     uint8_t lun_state = 0;
 
@@ -133,18 +145,22 @@ void tele_usb_disk() {
 
         if (usb_menu_command == USB_MENU_COMMAND_WRITE ||
             usb_menu_command == USB_MENU_COMMAND_BOTH) {
-            if (!tele_usb_disk_write_operation(&lun_state, &lun)) { continue; }
+            if (!tele_usb_disk_write_operation(&lun_state, &lun, scene)) {
+                continue;
+            }
         }
         if (usb_menu_command == USB_MENU_COMMAND_READ ||
             usb_menu_command == USB_MENU_COMMAND_BOTH) {
-            tele_usb_disk_read_operation();
+            tele_usb_disk_read_operation(scene);
         }
 
         nav_exit();
     }
+    free(scene);
 }
 
-bool tele_usb_disk_write_operation(uint8_t* plun_state, uint8_t* plun) {
+static bool tele_usb_disk_write_operation(uint8_t* plun_state, uint8_t* plun,
+                                          scene_state_t* scene) {
     // WRITE SCENES
     print_dbg("\r\nwriting scenes");
 
@@ -158,8 +174,7 @@ bool tele_usb_disk_write_operation(uint8_t* plun_state, uint8_t* plun) {
     region_draw(&line[0]);
 
     for (int i = 0; i < SCENE_SLOTS; i++) {
-        scene_state_t scene;
-        ss_init(&scene);
+        ss_init(scene);
 
         char text[SCENE_TEXT_LINES][SCENE_TEXT_CHARS];
         memset(text, 0, SCENE_TEXT_LINES * SCENE_TEXT_CHARS);
@@ -170,7 +185,7 @@ bool tele_usb_disk_write_operation(uint8_t* plun_state, uint8_t* plun) {
         font_string_region_clip_tab(&line[0], text_buffer, 2, 0, 0xa, 0);
         region_draw(&line[0]);
 
-        flash_read(i, &scene, &text, 1, 1, 1);
+        flash_read(i, scene, &text, 1, 1, 1);
 
         if (!nav_file_create((FS_STRING)filename)) {
             if (fs_g_status != FS_ERR_FILE_EXIST) {
@@ -202,7 +217,7 @@ bool tele_usb_disk_write_operation(uint8_t* plun_state, uint8_t* plun) {
         tele_usb_writer.print_dbg = &print_dbg;
         tele_usb_writer.data =
             NULL;  // asf disk i/o holds state, no handles needed
-        serialize_scene(&tele_usb_writer, &scene, &text);
+        serialize_scene(&tele_usb_writer, scene, &text);
 
         file_close();
         *plun_state |= (1 << *plun);  // LUN test is done.
@@ -221,7 +236,7 @@ bool tele_usb_disk_write_operation(uint8_t* plun_state, uint8_t* plun) {
     return true;
 }
 
-void tele_usb_disk_read_operation() {
+static void tele_usb_disk_read_operation(scene_state_t* scene) {
     // READ SCENES
     print_dbg("\r\nreading scenes...");
 
@@ -235,8 +250,7 @@ void tele_usb_disk_read_operation() {
     region_draw(&line[1]);
 
     for (int i = 0; i < SCENE_SLOTS; i++) {
-        scene_state_t scene;
-        ss_init(&scene);
+        ss_init(scene);
         char text[SCENE_TEXT_LINES][SCENE_TEXT_CHARS];
         memset(text, 0, SCENE_TEXT_LINES * SCENE_TEXT_CHARS);
 
@@ -257,10 +271,10 @@ void tele_usb_disk_read_operation() {
                 tele_usb_reader.print_dbg = &print_dbg;
                 tele_usb_reader.data =
                     NULL;  // asf disk i/o holds state, no handles needed
-                deserialize_scene(&tele_usb_reader, &scene, &text);
+                deserialize_scene(&tele_usb_reader, scene, &text);
 
                 file_close();
-                flash_write(i, &scene, &text);
+                flash_write(i, scene, &text);
             }
         }
 

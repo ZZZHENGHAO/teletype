@@ -8,14 +8,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Helpers /////////////////////////////////////////////////////////////////////
 
-// limit pn to within 0 and 3 inclusive
-static int16_t normalise_pn(const int16_t pn) {
-    if (pn < 0)
-        return 0;
-    else if (pn >= PATTERN_COUNT)
-        return PATTERN_COUNT - 1;
-    else
-        return pn;
+static int16_t normalise_pn(int16_t pn) {
+    return normalise_value(0, PATTERN_COUNT - 1, 0, pn);
 }
 
 // ensure that the pattern index is within bounds
@@ -459,6 +453,10 @@ static void p_prev_dec_i(scene_state_t *ss, int16_t pn) {
 
     int16_t idx = ss_get_pattern_idx(ss, pn);
 
+    if (len == 0) {
+        ss_set_pattern_idx(ss, pn, 0);
+        return;
+    }
     if ((idx == 0) || (idx == start)) {
         if (wrap) {
             if (end < len)
@@ -484,7 +482,7 @@ static void op_P_PREV_get(const void *NOTUSED(data), scene_state_t *ss,
 
 static void op_PN_PREV_get(const void *NOTUSED(data), scene_state_t *ss,
                            exec_state_t *NOTUSED(es), command_state_t *cs) {
-    const int16_t pn = cs_pop(cs);
+    const int16_t pn = normalise_pn(cs_pop(cs));
     p_prev_dec_i(ss, pn);
     cs_push(cs, ss_get_pattern_val(ss, pn, ss_get_pattern_idx(ss, pn)));
     tele_pattern_updated();
@@ -502,7 +500,7 @@ static void op_P_PREV_set(const void *NOTUSED(data), scene_state_t *ss,
 
 static void op_PN_PREV_set(const void *NOTUSED(data), scene_state_t *ss,
                            exec_state_t *NOTUSED(es), command_state_t *cs) {
-    const int16_t pn = cs_pop(cs);
+    const int16_t pn = normalise_pn(cs_pop(cs));
     const int16_t a = cs_pop(cs);
     p_prev_dec_i(ss, pn);
     ss_set_pattern_val(ss, pn, ss_get_pattern_idx(ss, pn), a);
@@ -526,11 +524,12 @@ static void p_ins_get(scene_state_t *ss, int16_t pn, int16_t idx, int16_t val) {
     const int16_t len = ss_get_pattern_len(ss, pn);
 
     if (len >= idx) {
-        for (int16_t i = len; i > idx; i--) {
+        int16_t last = len < PATTERN_LENGTH ? len : PATTERN_LENGTH - 1;
+        for (int16_t i = last; i > idx; i--) {
             int16_t v = ss_get_pattern_val(ss, pn, i - 1);
             ss_set_pattern_val(ss, pn, i, v);
         }
-        if (len < PATTERN_LENGTH - 1) { ss_set_pattern_len(ss, pn, len + 1); }
+        if (len < PATTERN_LENGTH) { ss_set_pattern_len(ss, pn, len + 1); }
     }
 
     ss_set_pattern_val(ss, pn, idx, val);
@@ -574,7 +573,8 @@ static int16_t p_rm_get(scene_state_t *ss, int16_t pn, int16_t idx) {
         int16_t ret = ss_get_pattern_val(ss, pn, idx);
 
         if (idx < len) {
-            for (int16_t i = idx; i < len; i++) {
+            int16_t last = len < PATTERN_LENGTH ? len : PATTERN_LENGTH - 1;
+            for (int16_t i = idx; i < last; i++) {
                 int16_t v = ss_get_pattern_val(ss, pn, i + 1);
                 ss_set_pattern_val(ss, pn, i, v);
             }
@@ -818,7 +818,7 @@ static void op_P_REV_get(const void *NOTUSED(data), scene_state_t *ss,
 
 static void op_PN_REV_get(const void *NOTUSED(data), scene_state_t *ss,
                           exec_state_t *NOTUSED(es), command_state_t *cs) {
-    int16_t pn = cs_pop(cs);
+    int16_t pn = normalise_pn(cs_pop(cs));
     p_reverse(ss, pn, ss_get_pattern_start(ss, pn), ss_get_pattern_end(ss, pn));
 }
 
@@ -832,17 +832,14 @@ static void p_rotate(scene_state_t *ss, int16_t pn, int16_t shift) {
     if (end < start) { return; }
     int16_t len = end - start + 1;
 
+    shift %= len;
     if (shift < 0) {
         shift = -shift;
-        shift = shift % len;
-        if (shift == 0) return;
         p_reverse(ss, pn, start, start + shift - 1);
         p_reverse(ss, pn, start + shift, end);
         p_reverse(ss, pn, start, end);
     }
-    else {
-        shift = shift % len;
-        if (shift == 0) return;
+    else if (shift != 0) {
         p_reverse(ss, pn, end - shift + 1, end);
         p_reverse(ss, pn, start, end - shift);
         p_reverse(ss, pn, start, end);

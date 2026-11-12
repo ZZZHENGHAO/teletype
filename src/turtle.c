@@ -1,10 +1,15 @@
 #include "turtle.h"
 
+#include "state.h"
+
 #define min(X, Y) ((X) < (Y) ? (X) : (Y))
 #define max(X, Y) ((X) > (Y) ? (X) : (Y))
 
 void turtle_init(scene_turtle_t *st) {
-    scene_turtle_t t = { .fence = { .x1 = 0, .y1 = 0, .x2 = 3, .y2 = 63 },
+    scene_turtle_t t = { .fence = { .x1 = 0,
+                                    .y1 = 0,
+                                    .x2 = PATTERN_COUNT - 1,
+                                    .y2 = PATTERN_LENGTH - 1 },
                          .mode = TURTLE_BUMP,
                          .heading = 180,
                          .speed = 100,
@@ -202,10 +207,10 @@ void turtle_step(scene_turtle_t *st) {
 
 inline void turtle_correct_fence(scene_turtle_t *st) {
     int16_t t;
-    st->fence.x1 = min(3, max(0, st->fence.x1));
-    st->fence.x2 = min(3, max(0, st->fence.x2));
-    st->fence.y1 = min(63, max(0, st->fence.y1));
-    st->fence.y2 = min(63, max(0, st->fence.y2));
+    st->fence.x1 = min(PATTERN_COUNT - 1, max(0, st->fence.x1));
+    st->fence.x2 = min(PATTERN_COUNT - 1, max(0, st->fence.x2));
+    st->fence.y1 = min(PATTERN_LENGTH - 1, max(0, st->fence.y1));
+    st->fence.y2 = min(PATTERN_LENGTH - 1, max(0, st->fence.y2));
 
     if (st->fence.x1 > st->fence.x2) {
         t = st->fence.x2;
@@ -222,10 +227,10 @@ inline void turtle_correct_fence(scene_turtle_t *st) {
 
 void turtle_set_fence(scene_turtle_t *st, int16_t x1, int16_t y1, int16_t x2,
                       int16_t y2) {
-    st->fence.x1 = min(3, max(0, x1));
-    st->fence.x2 = min(3, max(0, x2));
-    st->fence.y1 = min(63, max(0, y1));
-    st->fence.y2 = min(63, max(0, y2));
+    st->fence.x1 = min(PATTERN_COUNT - 1, max(0, x1));
+    st->fence.x2 = min(PATTERN_COUNT - 1, max(0, x2));
+    st->fence.y1 = min(PATTERN_LENGTH - 1, max(0, y1));
+    st->fence.y2 = min(PATTERN_LENGTH - 1, max(0, y2));
     turtle_correct_fence(st);
 }
 

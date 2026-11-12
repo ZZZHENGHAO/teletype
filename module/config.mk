@@ -244,7 +244,9 @@ ARFLAGS =
 ASFLAGS =
 
 # Extra flags to use when compiling.
-CFLAGS = -fshort-enums -fno-common
+# AVR32 flash reserved for all 32 eight-pattern scene slots.
+FLASH_NVRAM_KIB = 212
+CFLAGS = -fshort-enums -fno-common -DFLASH_NVRAM_KIB=$(FLASH_NVRAM_KIB)
 
 # Extra flags to use when preprocessing.
 #
@@ -259,7 +261,7 @@ CPPFLAGS = -D BOARD=USER_BOARD -D UHD_ENABLE
 
 # Extra flags to use when linking
 # NVRAM size may need to change if additional data is to be stored in scenes.
-LDFLAGS = -Wl,-e,_trampoline,--defsym=__flash_nvram_size__=200K
+LDFLAGS = -Wl,-e,_trampoline,--defsym=__flash_nvram_size__=$(FLASH_NVRAM_KIB)K
 
 # Pre- and post-build commands
 PREBUILD_CMD =

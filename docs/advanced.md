@@ -171,6 +171,8 @@ ops, but it can also be very helpful when used together with a scripted grid
 interface. For more information and diagrams please refer to 
 [the Grid Control documentation](https://github.com/scanner-darkly/teletype/wiki/GRID-CONTROL-MODE),
 
+In Grid Control Mode’s TRACKER view, the second key down in the rightmost control column switches banks. Its LED lights for tracks 5–8. The Grid and OLED show the same bank.
+
 If you do want to try and build your own grid interfaces 
 [the Grid Studies](https://github.com/scanner-darkly/teletype/wiki/GRID-INTEGRATION)
 is the best place to start.

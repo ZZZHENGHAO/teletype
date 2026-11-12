@@ -11,16 +11,21 @@
 // this
 #include "teletype.h"
 
-#define FIRSTRUN_KEY 0x22
+// The previous key described the four-pattern scene stride.
+#define FIRSTRUN_KEY 0x23
 
 static grid_data_t grid_data;
 
 #if defined(__AVR32__)
+typedef char nvram_fits_reserved_flash
+    [(sizeof(nvram_data_t) <= FLASH_NVRAM_KIB * 1024UL) ? 1 : -1];
 static __attribute__((__section__(".flash_nvram"))) nvram_data_t f;
 #else
 nvram_data_t f;
 #endif
 
+static void write_scene(uint8_t preset_no, scene_state_t *scene,
+                        char (*text)[SCENE_TEXT_LINES][SCENE_TEXT_CHARS]);
 static void pack_grid(scene_state_t *scene);
 static void unpack_grid(scene_state_t *scene);
 
@@ -52,15 +57,9 @@ void flash_prepare() {
         print_dbg("\r\nflash size: ");
         print_dbg_ulong(sizeof(f));
 
-        // blank scene to write to flash
-        scene_state_t scene;
-        ss_init(&scene);
-
-        char text[SCENE_TEXT_LINES][SCENE_TEXT_CHARS];
-        memset(text, 0, SCENE_TEXT_LINES * SCENE_TEXT_CHARS);
-
+        // initialize_module has already initialized the working scene.
         for (uint8_t i = 0; i < SCENE_SLOTS; i++) {
-            flash_write(i, &scene, &text);
+            write_scene(i, &scene_state, &scene_text);
         }
 
         cal_data_t blank_cal_data;
@@ -70,15 +69,20 @@ void flash_prepare() {
         device_config_t device_config = { .flip = 0 };
         flashc_memcpy((void *)&f.device_config, &device_config,
                       sizeof(device_config), true);
-        flash_update_last_saved_scene(0);
-        flash_update_last_mode(M_LIVE);
+        flashc_memset8((void *)&f.last_scene, 0, 1, true);
+        flashc_memset8((void *)&f.last_mode, M_LIVE, sizeof(f.last_mode), true);
         flashc_memset8((void *)&f.fresh, FIRSTRUN_KEY, 1, true);
     }
 }
 
 void flash_write(uint8_t preset_no, scene_state_t *scene,
                  char (*text)[SCENE_TEXT_LINES][SCENE_TEXT_CHARS]) {
-    if (preset_no >= SCENE_SLOTS) return;
+    if (preset_no >= SCENE_SLOTS || is_flash_fresh()) return;
+    write_scene(preset_no, scene, text);
+}
+
+static void write_scene(uint8_t preset_no, scene_state_t *scene,
+                        char (*text)[SCENE_TEXT_LINES][SCENE_TEXT_CHARS]) {
     flashc_memcpy((void *)&f.scenes[preset_no].scripts, ss_scripts_ptr(scene),
                   ss_scripts_size(EDITABLE_SCRIPT_COUNT), true);
     flashc_memcpy((void *)&f.scenes[preset_no].patterns, ss_patterns_ptr(scene),
@@ -94,7 +98,7 @@ void flash_read(uint8_t preset_no, scene_state_t *scene,
                 char (*text)[SCENE_TEXT_LINES][SCENE_TEXT_CHARS],
                 uint8_t init_pattern, uint8_t init_grid,
                 uint8_t init_i2c_op_address) {
-    if (preset_no >= SCENE_SLOTS) return;
+    if (preset_no >= SCENE_SLOTS || is_flash_fresh()) return;
     memcpy(ss_scripts_ptr(scene), &f.scenes[preset_no].scripts,
            ss_scripts_size(EDITABLE_SCRIPT_COUNT));
     if (init_pattern) {
@@ -118,20 +122,23 @@ void flash_read(uint8_t preset_no, scene_state_t *scene,
 }
 
 uint8_t flash_last_saved_scene() {
-    return f.last_scene;
+    return is_flash_fresh() || f.last_scene >= SCENE_SLOTS ? 0 : f.last_scene;
 }
 
 void flash_update_last_saved_scene(uint8_t preset_no) {
-    if (preset_no >= SCENE_SLOTS) return;
+    if (preset_no >= SCENE_SLOTS || is_flash_fresh()) return;
     flashc_memset8((void *)&f.last_scene, preset_no, 1, true);
 }
 
 const char *flash_scene_text(uint8_t preset_no, size_t line) {
+    if (is_flash_fresh() || preset_no >= SCENE_SLOTS ||
+        line >= SCENE_TEXT_LINES)
+        return "";
     return f.scenes[preset_no].text[line];
 }
 
 tele_mode_t flash_last_mode() {
-    return f.last_mode;
+    return is_flash_fresh() ? M_LIVE : f.last_mode;
 }
 
 void flash_update_last_mode(tele_mode_t mode) {
@@ -139,20 +146,28 @@ void flash_update_last_mode(tele_mode_t mode) {
 }
 
 void flash_update_cal(cal_data_t *cal) {
+    if (is_flash_fresh()) return;
     flashc_memcpy((void *)&f.cal, cal, sizeof(cal_data_t), true);
 }
 
 void flash_get_cal(cal_data_t *cal) {
-    *cal = f.cal;
+    if (is_flash_fresh())
+        init_cal_data(cal);
+    else
+        *cal = f.cal;
 }
 
 void flash_update_device_config(device_config_t *device_config) {
+    if (is_flash_fresh()) return;
     flashc_memcpy((void *)&f.device_config, device_config,
                   sizeof(device_config_t), true);
 }
 
 void flash_get_device_config(device_config_t *device_config) {
-    *device_config = f.device_config;
+    if (is_flash_fresh())
+        device_config->flip = 0;
+    else
+        *device_config = f.device_config;
 }
 
 static void pack_grid(scene_state_t *scene) {

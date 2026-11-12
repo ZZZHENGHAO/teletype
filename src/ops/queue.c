@@ -531,9 +531,7 @@ static void op_Q_2P_get(const void *NOTUSED(data), scene_state_t *ss,
 static void op_Q_2P_set(const void *NOTUSED(data), scene_state_t *ss,
                         exec_state_t *NOTUSED(es), command_state_t *cs) {
     int16_t *q = ss->variables.q;
-    int16_t pn = cs_pop(cs);
-    pn = pn < 0 ? 0 : pn;
-    pn = pn > PATTERN_COUNT - 1 ? PATTERN_COUNT - 1 : pn;
+    int16_t pn = normalise_value(0, PATTERN_COUNT - 1, 0, cs_pop(cs));
     int8_t end_at = PATTERN_LENGTH < Q_LENGTH ? PATTERN_LENGTH : Q_LENGTH;
     for (int8_t i = 0; i < end_at; i++) { ss_set_pattern_val(ss, pn, i, q[i]); }
     tele_pattern_updated();
@@ -552,9 +550,7 @@ static void op_Q_P2_get(const void *NOTUSED(data), scene_state_t *ss,
 static void op_Q_P2_set(const void *NOTUSED(data), scene_state_t *ss,
                         exec_state_t *NOTUSED(es), command_state_t *cs) {
     int16_t *q = ss->variables.q;
-    int16_t pn = cs_pop(cs);
-    pn = pn < 0 ? 0 : pn;
-    pn = pn > PATTERN_COUNT - 1 ? PATTERN_COUNT - 1 : pn;
+    int16_t pn = normalise_value(0, PATTERN_COUNT - 1, 0, cs_pop(cs));
     int8_t end_at = PATTERN_LENGTH < Q_LENGTH ? PATTERN_LENGTH : Q_LENGTH;
     for (int8_t i = 0; i < end_at; i++) {
         q[i] = ss_get_pattern_val(ss, pn, i);

@@ -135,7 +135,10 @@ TEST test_round_trip_file(char* filename, char* tempfile) {
 
         serialize_scene(&test_file_writer, &scene, &text);
 
-        CHECK_CALL(compare_files(filename, infile, outfile));
+        int result = compare_files(filename, infile, outfile);
+        fclose(infile);
+        fclose(outfile);
+        CHECK_CALL(result);
     }
 
     PASS();
@@ -165,6 +168,92 @@ TEST test_deserialize_fragment_script_basic() {
     PASS();
 }
 
+TEST test_eight_pattern_round_trip() {
+    scene_state_t original = { 0 }, restored = { 0 };
+    ss_init(&original);
+    ss_init(&restored);
+    char text[SCENE_TEXT_LINES][SCENE_TEXT_CHARS] = { "EIGHT TRACKS" };
+    char restored_text[SCENE_TEXT_LINES][SCENE_TEXT_CHARS] = { 0 };
+
+    for (int channel = 0; channel < 8; channel++) {
+        ss_set_pattern_len(&original, channel, 64 - channel);
+        ss_set_pattern_wrap(&original, channel, channel % 2);
+        ss_set_pattern_start(&original, channel, channel);
+        ss_set_pattern_end(&original, channel, 63 - channel);
+        ss_set_pattern_val(&original, channel, 0, INT16_MIN + channel);
+        ss_set_pattern_val(&original, channel, 63, INT16_MAX - channel);
+    }
+    deserialize_fragment("#1\nPN 7 63 99\n", &original, &text);
+    original.grid.button[255].state = 1;
+    original.grid.fader[63].value = 15;
+
+    FILE* file = tmpfile();
+    ASSERT(file != NULL);
+    test_file_writer.data = file;
+    serialize_scene(&test_file_writer, &original, &text);
+    rewind(file);
+    test_file_reader.data = file;
+    deserialize_scene(&test_file_reader, &restored, &restored_text);
+    fclose(file);
+
+    ASSERT_EQ(0,
+              memcmp(original.patterns, restored.patterns, ss_patterns_size()));
+    ASSERT_STR_EQ("EIGHT TRACKS", restored_text[0]);
+    ASSERT_EQ(E_OP_PN, restored.scripts[0].c[0].data[0].value);
+    ASSERT_EQ(7, restored.scripts[0].c[0].data[1].value);
+    ASSERT_EQ(1, restored.grid.button[255].state);
+    ASSERT_EQ(15, restored.grid.fader[63].value);
+    PASS();
+}
+
+TEST test_legacy_patterns_clear_extra_channels() {
+    scene_state_t scene = { 0 };
+    ss_init(&scene);
+    char text[SCENE_TEXT_LINES][SCENE_TEXT_CHARS] = { 0 };
+    ss_set_pattern_len(&scene, 7, 64);
+    ss_set_pattern_val(&scene, 7, 63, 1234);
+
+    deserialize_fragment(
+        "#P\r\n1\t1\t1\t1\r\n1\t1\t1\t1\r\n"
+        "0\t0\t0\t0\r\n63\t63\t63\t63\r\n\r\n"
+        "10\t20\t-30\t40",
+        &scene, &text);
+    ASSERT_EQ(10, ss_get_pattern_val(&scene, 0, 0));
+    ASSERT_EQ(-30, ss_get_pattern_val(&scene, 2, 0));
+    ASSERT_EQ(40, ss_get_pattern_val(&scene, 3, 0));
+    for (int channel = 4; channel < 8; channel++) {
+        ASSERT_EQ(0, ss_get_pattern_len(&scene, channel));
+        ASSERT_EQ(1, ss_get_pattern_wrap(&scene, channel));
+        ASSERT_EQ(0, ss_get_pattern_start(&scene, channel));
+        ASSERT_EQ(63, ss_get_pattern_end(&scene, channel));
+        ASSERT_EQ(0, ss_get_pattern_val(&scene, channel, 63));
+    }
+    PASS();
+}
+
+TEST test_pattern_import_bounds() {
+    scene_state_t scene = { 0 };
+    ss_init(&scene);
+    char text[SCENE_TEXT_LINES][SCENE_TEXT_CHARS] = { 0 };
+    char fragment[512] =
+        "#P\n9999999999\n9\n-10\n300\n\n"
+        "-9999999999\t\t3\t4\t5\t6\t7\t8\t123\n";
+    for (int row = 1; row < 64; row++) strcat(fragment, "9\n");
+    strcat(fragment, "1234\n5678\n#1\nP.N 7\n");
+    deserialize_fragment(fragment, &scene, &text);
+    ASSERT_EQ(64, ss_get_pattern_len(&scene, 0));
+    ASSERT_EQ(1, ss_get_pattern_wrap(&scene, 0));
+    ASSERT_EQ(0, ss_get_pattern_start(&scene, 0));
+    ASSERT_EQ(63, ss_get_pattern_end(&scene, 0));
+    ASSERT_EQ(INT16_MIN, ss_get_pattern_val(&scene, 0, 0));
+    ASSERT_EQ(0, ss_get_pattern_val(&scene, 1, 0));
+    ASSERT_EQ(8, ss_get_pattern_val(&scene, 7, 0));
+    ASSERT_EQ(9, ss_get_pattern_val(&scene, 0, 63));
+    ASSERT_EQ(0, ss_get_pattern_idx(&scene, 1));
+    ASSERT_EQ(1, ss_get_script_len(&scene, 0));
+    PASS();
+}
+
 SUITE(serialize_scene_suite) {
     log_init();
     init_serializers();
@@ -187,5 +276,8 @@ SUITE(serialize_scene_suite) {
     RUN_TESTp(test_round_trip_file, "../presets/tt08.txt",
               "./test_output/tt08.txt");
     RUN_TEST(test_deserialize_fragment_script_basic);
+    RUN_TEST(test_eight_pattern_round_trip);
+    RUN_TEST(test_legacy_patterns_clear_extra_channels);
+    RUN_TEST(test_pattern_import_bounds);
     log_print();
 }

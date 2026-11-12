@@ -6,7 +6,7 @@ short = "get or set the current pattern value under the turtle"
 ["@X"]
 prototype = "@X"
 prototype_set = "@X x"
-short = "get the turtle X coordinate, or set it to x"
+short = "get or set the turtle pattern number within its fence (full range `0–7`)"
 
 ["@Y"]
 prototype = "@Y"

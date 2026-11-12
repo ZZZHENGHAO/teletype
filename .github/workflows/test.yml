@@ -41,7 +41,7 @@ jobs:
       - name: Build simulator
         run: |
           cd simulator
-          make
+          make test
   build-firmware:
     runs-on: ubuntu-latest
     steps:

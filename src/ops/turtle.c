@@ -164,7 +164,7 @@ static void op_TURTLE_FX1_get(const void *NOTUSED(data), scene_state_t *ss,
 static void op_TURTLE_FX1_set(const void *NOTUSED(data), scene_state_t *ss,
                               exec_state_t *NOTUSED(es), command_state_t *cs) {
     int16_t v = cs_pop(cs);
-    ss->turtle.fence.x1 = v > 0 ? v : 0;
+    ss->turtle.fence.x1 = normalise_value(0, PATTERN_COUNT - 1, 0, v);
     turtle_correct_fence(&ss->turtle);
     tele_pattern_updated();
 }
@@ -177,7 +177,7 @@ static void op_TURTLE_FY1_get(const void *NOTUSED(data), scene_state_t *ss,
 static void op_TURTLE_FY1_set(const void *NOTUSED(data), scene_state_t *ss,
                               exec_state_t *NOTUSED(es), command_state_t *cs) {
     int16_t v = cs_pop(cs);
-    ss->turtle.fence.y1 = v > 0 ? v : 0;
+    ss->turtle.fence.y1 = normalise_value(0, PATTERN_LENGTH - 1, 0, v);
     turtle_correct_fence(&ss->turtle);
     tele_pattern_updated();
 }
@@ -190,7 +190,7 @@ static void op_TURTLE_FX2_get(const void *NOTUSED(data), scene_state_t *ss,
 static void op_TURTLE_FX2_set(const void *NOTUSED(data), scene_state_t *ss,
                               exec_state_t *NOTUSED(es), command_state_t *cs) {
     int16_t v = cs_pop(cs);
-    ss->turtle.fence.x2 = v > 0 ? v : 0;
+    ss->turtle.fence.x2 = normalise_value(0, PATTERN_COUNT - 1, 0, v);
     turtle_correct_fence(&ss->turtle);
     tele_pattern_updated();
 }
@@ -203,7 +203,7 @@ static void op_TURTLE_FY2_get(const void *NOTUSED(data), scene_state_t *ss,
 static void op_TURTLE_FY2_set(const void *NOTUSED(data), scene_state_t *ss,
                               exec_state_t *NOTUSED(es), command_state_t *cs) {
     int16_t v = cs_pop(cs);
-    ss->turtle.fence.y2 = v > 0 ? v : 0;
+    ss->turtle.fence.y2 = normalise_value(0, PATTERN_LENGTH - 1, 0, v);
     turtle_correct_fence(&ss->turtle);
     tele_pattern_updated();
 }

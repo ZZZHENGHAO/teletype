@@ -21,7 +21,7 @@
 #include "usb_protocol_hid.h"
 
 static int16_t value_copy_buffer;
-static uint8_t pattern;  // which pattern are we editting
+static uint8_t pattern;  // selected pattern across both banks
 static uint8_t base;     // base + offset determine what we are editting
 static uint8_t offset;
 
@@ -42,6 +42,17 @@ void set_pattern_mode() {
     edit_buffer = 0;
 }
 
+uint8_t get_pattern_bank() {
+    return pattern / TRACKER_BANK_SIZE * TRACKER_BANK_SIZE;
+}
+
+void toggle_pattern_bank() {
+    pattern = (pattern + TRACKER_BANK_SIZE) % PATTERN_COUNT;
+    editing_number = false;
+    edit_negative = false;
+    dirty = true;
+}
+
 uint8_t get_pattern_offset() {
     return offset;
 }
@@ -52,9 +63,11 @@ void set_pattern_offset(uint8_t o) {
     dirty = true;
 }
 
-void set_pattern_selected_value(uint8_t p, uint8_t offset) {
+void set_pattern_selected_value(uint8_t p, uint8_t row) {
     pattern = p;
-    base = offset;
+    base = row;
+    editing_number = false;
+    edit_negative = false;
     dirty = true;
 }
 
@@ -156,7 +169,7 @@ void process_pattern_keys(uint8_t k, uint8_t m, bool is_held_key) {
     // <right>: move right
     else if (match_no_mod(m, k, HID_RIGHT)) {
         editing_number = false;
-        if (pattern < 3) pattern++;
+        if (pattern < PATTERN_COUNT - 1) pattern++;
         dirty = true;
     }
     // alt-<right>: move to the very right
@@ -484,62 +497,58 @@ uint8_t screen_refresh_pattern() {
     if (!dirty) { return 0; }
 
     char s[32];
+    uint8_t bank = get_pattern_bank();
     for (uint8_t y = 0; y < 8; y++) {
+        uint8_t step = y + offset;
         region_fill(&line[y], 0);
-        itoa(y + offset, s, 10);
-        font_string_region_clip_right(&line[y], s, 4, 0, 0x1, 0);
+        itoa(step, s, 10);
+        font_string_region_clip_right(&line[y], s, 8, 0, 0x1, 0);
 
-        for (uint8_t x = 0; x < 4; x++) {
-            uint8_t a = 1;
-            if (ss_get_pattern_len(&scene_state, x) > y + offset) a = 6;
+        for (uint8_t x = 0; x < TRACKER_BANK_SIZE; x++) {
+            uint8_t channel = bank + x;
+            uint8_t right = (x + 1) * 30 + 4;
+            bool selected = channel == pattern && y == base;
+            uint8_t brightness =
+                selected
+                    ? 15
+                    : (ss_get_pattern_len(&scene_state, channel) > step ? 6
+                                                                        : 1);
+            if (selected && editing_number) {
+                if (edit_negative && edit_buffer == 0)
+                    strcpy(s, "-0");
+                else
+                    itoa(edit_buffer, s, 10);
+            }
+            else {
+                itoa(ss_get_pattern_val(&scene_state, channel, step), s, 10);
+            }
+            font_string_region_clip_right(&line[y], s, right, 0, brightness, 0);
 
-            itoa(ss_get_pattern_val(&scene_state, x, y + offset), s, 10);
-            font_string_region_clip_right(&line[y], s, (x + 1) * 30 + 4, 0, a,
-                                          0);
-
-            if (y + offset >= ss_get_pattern_start(&scene_state, x)) {
-                if (y + offset <= ss_get_pattern_end(&scene_state, x)) {
-                    for (uint8_t i = 0; i < 8; i += 2) {
-                        line[y].data[i * 128 + (x + 1) * 30 + 6] = 1;
-                    }
-                }
+            if (step >= ss_get_pattern_start(&scene_state, channel) &&
+                step <= ss_get_pattern_end(&scene_state, channel)) {
+                for (uint8_t i = 0; i < 8; i += 2)
+                    line[y].data[i * 128 + right + 2] = 1;
             }
 
-            if (y + offset == ss_get_pattern_idx(&scene_state, x)) {
-                line[y].data[2 * 128 + (x + 1) * 30 + 6] = 11;
-                line[y].data[3 * 128 + (x + 1) * 30 + 6] = 11;
-                line[y].data[4 * 128 + (x + 1) * 30 + 6] = 11;
+            if (step == ss_get_pattern_idx(&scene_state, channel)) {
+                for (uint8_t i = 2; i <= 4; i++)
+                    line[y].data[i * 128 + right + 2] = 11;
             }
         }
     }
 
-    if (editing_number) {
-        font_string_region_clip_right(&line[base], "      ",
-                                      (pattern + 1) * 30 + 4, 0, 0xf, 0);
-        if (edit_negative && edit_buffer == 0)
-            font_string_region_clip_right(&line[base], "    -0",
-                                          (pattern + 1) * 30 + 4, 0, 0xf, 0);
-        else {
-            itoa(edit_buffer, s, 10);
-            font_string_region_clip_right(&line[base], s,
-                                          (pattern + 1) * 30 + 4, 0, 0xf, 0);
-        }
-    }
-    else {
-        itoa(ss_get_pattern_val(&scene_state, pattern, base + offset), s, 10);
-        font_string_region_clip_right(&line[base], s, (pattern + 1) * 30 + 4, 0,
-                                      0xf, 0);
-    }
+    // One dot for tracks 1–4 and two for tracks 5–8.
+    line[0].data[7 * 128 + 9] = 11;
+    if (bank) line[0].data[7 * 128 + 10] = 11;
 
     if (scene_state.turtle.shown) {
         int16_t y = turtle_get_y(&scene_state.turtle);
-        int16_t x = turtle_get_x(&scene_state.turtle);
-        if (y >= offset && y < offset + 8) {
+        int16_t x = turtle_get_x(&scene_state.turtle) - bank;
+        if (x >= 0 && x < TRACKER_BANK_SIZE && y >= offset && y < offset + 8) {
             font_string_region_clip_right(&line[y - offset], "<",
                                           (x + 1) * 30 + 9, 0, 0xf, 0);
         }
     }
-
 
     for (uint8_t y = 0; y < 64; y += 2) {
         line[y >> 3].data[(y & 0x7) * 128 + 8] = 1;

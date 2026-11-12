@@ -26,7 +26,7 @@
 #define Q_ROUND(X) \
     ((((X >> (Q_BITS - 1)) + 1) >> 1) << Q_BITS)  // (int)(X + 0.5)
 #define QT int32_t
-#define TO_Q(X) (X << Q_BITS)
+#define TO_Q(X) ((X) * Q_1)
 #define TO_I(X) ((X >> Q_BITS) & 0xFFFF)
 
 typedef struct {
