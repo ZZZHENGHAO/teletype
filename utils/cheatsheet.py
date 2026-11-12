@@ -33,9 +33,6 @@ def inject_latex(value):
     return value
 
 
-# create a multiprocessing pool
-pool = multiprocessing.Pool()
-
 # our jinja2 environment
 env = jinja2.Environment(
     autoescape=False,
@@ -99,7 +96,7 @@ def latex_safe(s):
     return s
 
 
-def cheatsheet_tex(sections):
+def cheatsheet_tex(sections, pool):
     print(f"Using docs directory:     {DOCS_DIR}")
     print(f"Using ops docs directory: {OP_DOCS_DIR}")
     print()
@@ -139,7 +136,8 @@ def main():
 
     category = sys.argv[1]
     p = Path(sys.argv[2]).resolve()
-    p.write_text(cheatsheet_tex(OPS_SECTIONS[category]))
+    with multiprocessing.Pool() as pool:
+        p.write_text(cheatsheet_tex(OPS_SECTIONS[category], pool))
 
 if __name__ == "__main__":
     main()

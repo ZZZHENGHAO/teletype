@@ -53,6 +53,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install ragel
         run: sudo apt install ragel
       - name: Prepare AVR32 toolchain
