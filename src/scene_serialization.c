@@ -1,5 +1,6 @@
 #include "scene_serialization.h"
 
+#include "helpers.h"
 #include "teletype.h"
 #include "util.h"
 
@@ -9,6 +10,8 @@
 #define STATE_SCRIPT 3
 #define STATE_PATTERNS 4
 #define STATE_GRID 5
+#define PATTERN_HEADER_ROWS 4
+#define LEGACY_PATTERN_COUNT 4
 
 uint8_t grid_state = 0;
 uint16_t grid_count = 0;
@@ -22,6 +25,23 @@ bool check_deserializer(tt_deserializer_t* stream);
 void serialize_grid(tt_serializer_t* stream, scene_state_t* scene);
 void deserialize_grid(tt_deserializer_t* stream, scene_state_t* scene, char c);
 
+
+static int serialized_pattern_count(scene_state_t* scene) {
+    // Retain the legacy file format when the extra patterns are empty.
+    for (int channel = LEGACY_PATTERN_COUNT; channel < PATTERN_COUNT;
+         channel++) {
+        if (ss_get_pattern_len(scene, channel) ||
+            ss_get_pattern_wrap(scene, channel) != 1 ||
+            ss_get_pattern_start(scene, channel) ||
+            ss_get_pattern_end(scene, channel) != PATTERN_LENGTH - 1) {
+            return PATTERN_COUNT;
+        }
+        for (int step = 0; step < PATTERN_LENGTH; step++) {
+            if (ss_get_pattern_val(scene, channel, step)) return PATTERN_COUNT;
+        }
+    }
+    return LEGACY_PATTERN_COUNT;
+}
 
 void serialize_scene(tt_serializer_t* stream, scene_state_t* scene,
                      char (*text)[SCENE_TEXT_LINES][SCENE_TEXT_CHARS]) {
@@ -67,52 +87,25 @@ void serialize_scene(tt_serializer_t* stream, scene_state_t* scene,
     stream->write_char(stream->data, 'P');
     stream->write_char(stream->data, '\n');
 
-    for (int b = 0; b < 4; b++) {
-        itoa(ss_get_pattern_len(scene, b), input, 10);
-        stream->write_buffer(stream->data, (uint8_t*)input, strlen(input));
-        if (b == 3)
-            stream->write_char(stream->data, '\n');
-        else
-            stream->write_char(stream->data, '\t');
-    }
-
-    for (int b = 0; b < 4; b++) {
-        itoa(ss_get_pattern_wrap(scene, b), input, 10);
-        stream->write_buffer(stream->data, (uint8_t*)input, strlen(input));
-        if (b == 3)
-            stream->write_char(stream->data, '\n');
-        else
-            stream->write_char(stream->data, '\t');
-    }
-
-    for (int b = 0; b < 4; b++) {
-        itoa(ss_get_pattern_start(scene, b), input, 10);
-        stream->write_buffer(stream->data, (uint8_t*)input, strlen(input));
-        if (b == 3)
-            stream->write_char(stream->data, '\n');
-        else
-            stream->write_char(stream->data, '\t');
-    }
-
-    for (int b = 0; b < 4; b++) {
-        itoa(ss_get_pattern_end(scene, b), input, 10);
-        stream->write_buffer(stream->data, (uint8_t*)input, strlen(input));
-        if (b == 3)
-            stream->write_char(stream->data, '\n');
-        else
-            stream->write_char(stream->data, '\t');
-    }
-
-    stream->write_char(stream->data, '\n');
-
-    for (int l = 0; l < 64; l++) {
-        for (int b = 0; b < 4; b++) {
-            itoa(ss_get_pattern_val(scene, b, l), input, 10);
+    int pattern_count = serialized_pattern_count(scene);
+    for (int row = 0; row < PATTERN_HEADER_ROWS + PATTERN_LENGTH; row++) {
+        if (row == PATTERN_HEADER_ROWS) stream->write_char(stream->data, '\n');
+        for (int b = 0; b < pattern_count; b++) {
+            int16_t value;
+            switch (row) {
+                case 0: value = ss_get_pattern_len(scene, b); break;
+                case 1: value = ss_get_pattern_wrap(scene, b); break;
+                case 2: value = ss_get_pattern_start(scene, b); break;
+                case 3: value = ss_get_pattern_end(scene, b); break;
+                default:
+                    value =
+                        ss_get_pattern_val(scene, b, row - PATTERN_HEADER_ROWS);
+                    break;
+            }
+            itoa(value, input, 10);
             stream->write_buffer(stream->data, (uint8_t*)input, strlen(input));
-            if (b == 3)
-                stream->write_char(stream->data, '\n');
-            else
-                stream->write_char(stream->data, '\t');
+            stream->write_char(stream->data,
+                               b == pattern_count - 1 ? '\n' : '\t');
         }
     }
 
@@ -136,6 +129,31 @@ void serialize_scene(tt_serializer_t* stream, scene_state_t* scene,
     }
 }
 
+static void deserialize_pattern_cell(scene_state_t* scene, uint8_t channel,
+                                     uint8_t row, int32_t value) {
+    if (value > INT16_MAX) value = INT16_MAX;
+    switch (row) {
+        case 0:
+            ss_set_pattern_len(scene, channel,
+                               normalise_value(0, PATTERN_LENGTH, 0, value));
+            break;
+        case 1: ss_set_pattern_wrap(scene, channel, value > 0); break;
+        case 2:
+            ss_set_pattern_start(
+                scene, channel,
+                normalise_value(0, PATTERN_LENGTH - 1, 0, value));
+            break;
+        case 3:
+            ss_set_pattern_end(
+                scene, channel,
+                normalise_value(0, PATTERN_LENGTH - 1, 0, value));
+            break;
+        default:
+            ss_set_pattern_val(scene, channel, row - PATTERN_HEADER_ROWS,
+                               value);
+    }
+}
+
 void deserialize_scene(tt_deserializer_t* stream, scene_state_t* scene,
                        char (*text)[SCENE_TEXT_LINES][SCENE_TEXT_CHARS]) {
     if (!check_deserializer(stream)) { return; }
@@ -147,16 +165,19 @@ void deserialize_scene(tt_deserializer_t* stream, scene_state_t* scene,
     uint8_t p = 0;
     uint8_t s = STATE_DESC, s2 = STATE_DESC;
     uint8_t script = NO_SCRIPT;
-    uint8_t b = 0;
-    int16_t num = 0;
-    int16_t neg = 1;
+    uint8_t column = 0;
+    uint16_t magnitude = 0;
+    bool negative = false;
+    bool has_digits = false;
 
     char input[32];
     memset(input, 0, sizeof(input));
 
     while (!stream->eof(stream->data)) {
         new_line = c == '\n';
-        c = toupper(stream->read_char(stream->data));
+        uint16_t raw = stream->read_char(stream->data);
+        if (raw > UINT8_MAX) break;
+        c = toupper(raw);
         // stream->print_dbg_char(c);
 
         // deal with line endings
@@ -200,7 +221,13 @@ void deserialize_scene(tt_deserializer_t* stream, scene_state_t* scene,
                 script = INIT_SCRIPT;
                 s2 = STATE_SCRIPT;
             }
-            else if (c == 'P') { s2 = STATE_PATTERNS; }
+            else if (c == 'P') {
+                ss_patterns_init(scene);
+                column = 0;
+                magnitude = 0;
+                negative = has_digits = false;
+                s2 = STATE_PATTERNS;
+            }
             else if (c == 'G') {
                 grid_state = grid_count = 0;
                 s2 = STATE_GRID;
@@ -274,47 +301,27 @@ void deserialize_scene(tt_deserializer_t* stream, scene_state_t* scene,
             continue;
         }
 
-        // PATTERNS
         if (s == STATE_PATTERNS) {
-            // tele_patterns[]. l wrap start end v[64]
+            if (l >= PATTERN_HEADER_ROWS + PATTERN_LENGTH) continue;
 
             if (c == '\n' || c == '\t') {
-                if (b < 4) {
-                    if (l > 3) {
-                        ss_set_pattern_val(scene, b, l - 4, neg * num);
-                        // stream->print_dbg("\r\nset: ");
-                        // stream->print_dbg_ulong(b);
-                        // stream->print_dbg(" ");
-                        // stream->print_dbg_ulong(l-4);
-                        // stream->print_dbg(" ");
-                        // stream->print_dbg_ulong(num);
-                    }
-                    else if (l == 0) { ss_set_pattern_len(scene, b, num); }
-                    else if (l == 1) { ss_set_pattern_wrap(scene, b, num); }
-                    else if (l == 2) { ss_set_pattern_start(scene, b, num); }
-                    else if (l == 3) { ss_set_pattern_end(scene, b, num); }
+                if (has_digits && column < PATTERN_COUNT) {
+                    int32_t value = negative ? -(int32_t)magnitude : magnitude;
+                    deserialize_pattern_cell(scene, column, l, value);
                 }
-
-                b++;
-                num = 0;
-                neg = 1;
-
                 if (c == '\n') {
-                    if (p) l++;
-                    if (l > 68) s = -1;
-                    b = 0;
-                    p = 0;
+                    if (has_digits || column > 0) l++;
+                    column = 0;
                 }
+                else if (column < PATTERN_COUNT) { column++; }
+                magnitude = 0;
+                negative = has_digits = false;
             }
-            else {
-                if (c == '-')
-                    neg = -1;
-                else if (c >= '0' && c <= '9') {
-                    num = num * 10 + (c - 48);
-                    // stream->print_dbg("\r\nnum: ");
-                    // stream->print_dbg_ulong(num);
-                }
-                p++;
+            else if (c == '-' && !has_digits) { negative = true; }
+            else if (c >= '0' && c <= '9') {
+                uint32_t next = (uint32_t)magnitude * 10 + c - '0';
+                magnitude = next > 32768 ? 32768 : next;
+                has_digits = true;
             }
             continue;
         }
@@ -349,6 +356,11 @@ void deserialize_scene(tt_deserializer_t* stream, scene_state_t* scene,
             }
             continue;
         }
+    }
+    if (s == STATE_PATTERNS && l < PATTERN_HEADER_ROWS + PATTERN_LENGTH &&
+        column < PATTERN_COUNT && has_digits) {
+        int32_t value = negative ? -(int32_t)magnitude : magnitude;
+        deserialize_pattern_cell(scene, column, l, value);
     }
 }
 

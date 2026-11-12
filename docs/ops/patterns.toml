@@ -1,8 +1,8 @@
 ["P.N"]
 prototype = "P.N"
 prototype_set = "P.N x"
-short = "get/set the pattern number for the working pattern, default `0`"
-description = "get/set the pattern number for the working pattern, default `0`. All `P` ops refer to this pattern."
+short = "get/set the working pattern number (`0–7`), default `0`"
+description = "get/set the working pattern number (`0–7`), default `0`. All `P` ops refer to this pattern. Numbers below 0 select 0 and numbers above 7 select 7."
 
 [P]
 prototype = "P x"
@@ -27,7 +27,7 @@ This applies to `PN` as well, except the pattern number is the first variable an
 [PN]
 prototype = "PN x y"
 prototype_set = "PN x y z"
-short = "get/set the value of pattern `x` at index `y`"
+short = "get/set the value of pattern `x` (`0–7`) at step `y`"
 
 ["P.L"]
 prototype = "P.L"

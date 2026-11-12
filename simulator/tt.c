@@ -164,7 +164,7 @@ void grid_key_press(uint8_t x, uint8_t y, uint8_t z) {
 }
 
 int main() {
-    char *in;
+    char in[256];
     time_t t;
     error_t status;
     int i;
@@ -183,26 +183,26 @@ int main() {
     // printf("\nstored process: ");
     // process(&stored);
 
-    in = malloc(256);
-
     printf("teletype. (blank line quits)\n\n");
 
     scene_state_t ss;
     ss_init(&ss);
 
-    do {
+    while (true) {
         printf("> ");
-        fgets(in, 256, stdin);
+        if (!fgets(in, sizeof(in), stdin) || in[0] == '\n') break;
 
         i = 0;
         while (in[i]) {
-            in[i] = toupper(in[i]);
+            in[i] = toupper((unsigned char)in[i]);
             i++;
         }
 
-        tele_command_t temp;
+        tele_command_t temp = { 0 };
         exec_state_t es;
         es_init(&es);
+        es_push(&es);
+        es_set_script_number(&es, LIVE_SCRIPT);
         char error_msg[TELE_ERROR_MSG_LENGTH];
         status = parse(in, &temp, error_msg);
         if (status == E_OK) {
@@ -223,9 +223,7 @@ int main() {
 
         // tele_tick(100);
         printf("\n");
-    } while (in[0] != 10);
-
-    free(in);
+    }
 
     printf("(teletype exit.)\n");
 }

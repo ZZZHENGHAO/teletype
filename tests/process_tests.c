@@ -359,7 +359,81 @@ TEST test_P_ROT_3() {
     PASS();
 }
 
+TEST test_tracker_eight_patterns() {
+    scene_state_t ss = { 0 };
+    ss_init(&ss);
+
+    for (int channel = 0; channel < 8; channel++) {
+        char select[20], write[24], read[20], turtle[20];
+        snprintf(select, sizeof(select), "P.N %d", channel);
+        snprintf(write, sizeof(write), "PN %d 63 %d", channel, 100 + channel);
+        snprintf(read, sizeof(read), "PN %d 63", channel);
+        snprintf(turtle, sizeof(turtle), "@X %d", channel);
+        char* commands[] = { write, select, "P 63" };
+        CHECK_CALL(process_helper_state(&ss, 3, commands, 100 + channel));
+        char* turtle_read[] = { turtle, "@Y 63", "@" };
+        CHECK_CALL(process_helper_state(&ss, 3, turtle_read, 100 + channel));
+        char* direct[] = { read };
+        CHECK_CALL(process_helper_state(&ss, 1, direct, 100 + channel));
+    }
+
+    for (int channel = 0; channel < 8; channel++)
+        ASSERT_EQ(100 + channel, ss_get_pattern_val(&ss, channel, 63));
+
+    char* queue[] = { "Q.P2 7", "Q.2P 4", "PN 4 63" };
+    CHECK_CALL(process_helper_state(&ss, 3, queue, 107));
+    char* active_queue[] = { "P.N 4", "Q.P2", "P.N 5", "Q.2P", "P 63" };
+    CHECK_CALL(process_helper_state(&ss, 5, active_queue, 107));
+    char* turtle_write[] = { "@X 6", "@ -300", "PN 6 63" };
+    CHECK_CALL(process_helper_state(&ss, 3, turtle_write, -300));
+    char* reset[] = { "INIT.P 7", "PN 7 63" };
+    CHECK_CALL(process_helper_state(&ss, 2, reset, 0));
+    ASSERT_EQ(107, ss_get_pattern_val(&ss, 5, 63));
+    char* reset_all[] = { "INIT.P.ALL", "PN 5 63" };
+    CHECK_CALL(process_helper_state(&ss, 2, reset_all, 0));
+    PASS();
+}
+
+TEST test_tracker_pattern_bounds() {
+    char* upper[] = { "P.N 32767", "P.N" };
+    CHECK_CALL(process_helper(2, upper, 7));
+    char* lower[] = { "P.N -32768", "P.N" };
+    CHECK_CALL(process_helper(2, lower, 0));
+    char* empty[] = { "PN.PREV 32767", "PN.I 7" };
+    CHECK_CALL(process_helper(2, empty, 0));
+    char* upper_step[] = { "PN 7 32767 19", "PN 8 63" };
+    CHECK_CALL(process_helper(2, upper_step, 19));
+    char* lower_step[] = { "PN -32768 -32768 23", "PN 0 0" };
+    CHECK_CALL(process_helper(2, lower_step, 23));
+
+    scene_state_t ss = { 0 };
+    ss_init(&ss);
+    char* fill[] = { "PN 7 62 17", "PN.L 7 63", "PN.INS 7 0 40", "PN.L 7" };
+    CHECK_CALL(process_helper_state(&ss, 4, fill, 64));
+    ASSERT_EQ(17, ss_get_pattern_val(&ss, 7, 63));
+    char* insert[] = { "PN.INS 7 1 70", "PN.L 7" };
+    CHECK_CALL(process_helper_state(&ss, 2, insert, 64));
+    ASSERT_EQ(70, ss_get_pattern_val(&ss, 7, 1));
+    char* remove[] = { "PN.RM 7 0", "PN.L 7" };
+    CHECK_CALL(process_helper_state(&ss, 2, remove, 63));
+    ASSERT_EQ(70, ss_get_pattern_val(&ss, 7, 0));
+    char* reverse[] = { "PN.REV 32767", "PN 7 63" };
+    CHECK_CALL(process_helper_state(&ss, 2, reverse, 70));
+    char* wrap[] = { "PN.START 7 61", "PN.END 7 63", "PN.L 7 64",
+                     "PN.I 7 61",     "PN.WRAP 7 1", "PN.PREV 8" };
+    CHECK_CALL(process_helper_state(&ss, 6, wrap, 70));
+    char* map[] = { "PN.MAP 7: + I 1", "PN 7 -1" };
+    CHECK_CALL(process_helper_state(&ss, 2, map, 71));
+    char* invalid_reset[] = { "INIT.P 8", "INIT.P -1", "PN 7 -1" };
+    CHECK_CALL(process_helper_state(&ss, 3, invalid_reset, 71));
+    char* queue_clip[] = { "Q.P2 32767", "Q.2P -1", "PN 0 63" };
+    CHECK_CALL(process_helper_state(&ss, 3, queue_clip, 71));
+    PASS();
+}
+
 SUITE(process_suite) {
+    RUN_TEST(test_tracker_eight_patterns);
+    RUN_TEST(test_tracker_pattern_bounds);
     RUN_TEST(test_numbers);
     RUN_TEST(test_ADD);
     RUN_TEST(test_PROB);

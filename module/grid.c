@@ -184,7 +184,7 @@ static grid_control_mode_t tt_mode = G_LIVE_V, tt_last_mode = G_LIVE_V;
 static u8 control_mode_on, tt_script, variable_edit, variable_changed;
 static u8 preset_write, tracker_pressed, tracker_x, tracker_y;
 static u8 tracker_changed, tracker_select, tracker_selected;
-static u8 tracker_set_start, tracker_set_end;
+static u8 tracker_set_start, tracker_set_end, tracker_bank;
 static s16 tracker_last, variable_last;
 static u16 size_x = 16, size_y = 8;
 static u8 screen[GRID_MAX_DIMENSION][GRID_MAX_DIMENSION / 2];
@@ -308,13 +308,15 @@ void grid_control_refresh(scene_state_t *ss) {
 
     if (tt_mode == G_TRACKER) {
         monomeLedBuffer[d + 7] = mode_on;
+        u8 bank = get_pattern_bank();
+        monomeLedBuffer[d + 7 + 16] = bank ? tracker_control : 0;
         u8 offset = get_pattern_offset(), in, off, rem;
         for (u16 j = 0; j < 8; j++) {
-            for (u16 i = 0; i < 4; i++) {
-                in = offset + j >= ss_get_pattern_start(ss, i) &&
-                     offset + j <= ss_get_pattern_end(ss, i);
+            for (u16 i = 0; i < TRACKER_BANK_SIZE; i++) {
+                in = offset + j >= ss_get_pattern_start(ss, bank + i) &&
+                     offset + j <= ss_get_pattern_end(ss, bank + i);
                 monomeLedBuffer[d + i + 2 + (j << 4)] =
-                    ss_get_pattern_val(ss, i, j + offset)
+                    ss_get_pattern_val(ss, bank + i, j + offset)
                         ? tracker_on
                         : (in ? tracker_in : tracker_out);
             }
@@ -325,10 +327,11 @@ void grid_control_refresh(scene_state_t *ss) {
                          : (j == off + 1 ? tracker_page_off + rem
                                          : tracker_page_off);
         }
-        for (u16 i = 0; i < 4; i++) {
-            u8 index = ss_get_pattern_idx(ss, i);
+        for (u16 i = 0; i < TRACKER_BANK_SIZE; i++) {
+            u8 index = ss_get_pattern_idx(ss, bank + i);
             if (index >= offset && index <= offset + 7) {
-                monomeLedBuffer[d + i + 2 + (index << 4)] += tracker_pos;
+                monomeLedBuffer[d + i + 2 + ((index - offset) << 4)] +=
+                    tracker_pos;
             }
         }
 
@@ -556,25 +559,30 @@ static u8 grid_control_process_key(scene_state_t *ss, u8 x, u8 y, u8 z,
     // tracker
     if (tt_mode == G_TRACKER) {
         u8 offset = get_pattern_offset();
+        u8 bank = get_pattern_bank();
+        bool pattern_key = x >= 2 && x < 2 + TRACKER_BANK_SIZE;
+        if (bank != tracker_bank) {
+            tracker_pressed = 0;
+            tracker_last = 0;
+            tracker_bank = bank;
+        }
 
         if (x == 7 && y == 4) tracker_set_start = z;
         if (x == 7 && y == 5) tracker_set_end = z;
 
         if (tracker_pressed) {
-            s16 value =
-                ss_get_pattern_val(ss, tracker_x - 2, tracker_y + offset);
+            u8 channel = bank + tracker_x - 2;
+            u8 step = tracker_y + offset;
+            s16 value = ss_get_pattern_val(ss, channel, step);
 
             if (x == tracker_x && y == tracker_y && !z) {
                 if (!tracker_changed) {
-                    s16 value = ss_get_pattern_val(
-                        ss, tracker_x - 2, tracker_y + get_pattern_offset());
                     if (value) {
                         tracker_last = value;
                         value = 0;
                     }
                     else { value = tracker_last ? tracker_last : 1; }
-                    ss_set_pattern_val(ss, tracker_x - 2, tracker_y + offset,
-                                       value);
+                    ss_set_pattern_val(ss, channel, step, value);
                 }
                 tracker_pressed = 0;
                 tele_pattern_updated();
@@ -588,51 +596,47 @@ static u8 grid_control_process_key(scene_state_t *ss, u8 x, u8 y, u8 z,
             if (y == tracker_y) {
                 if (x == tracker_x + 1) {
                     if (value < 32767) {
-                        ss_set_pattern_val(ss, tracker_x - 2,
-                                           tracker_y + offset, value + 1);
+                        ss_set_pattern_val(ss, channel, step, value + 1);
                         updated = 1;
                     }
                 }
                 else if (x == tracker_x + 2) {
                     if (value < 32758) {
-                        ss_set_pattern_val(ss, tracker_x - 2,
-                                           tracker_y + offset, value + 10);
+                        ss_set_pattern_val(ss, channel, step, value + 10);
                         updated = 1;
                     }
                     else if (value < 32767) {
-                        ss_set_pattern_val(ss, tracker_x - 2,
-                                           tracker_y + offset, 32767);
+                        ss_set_pattern_val(ss, channel, step, 32767);
                         updated = 1;
                     }
                 }
                 else if (x == tracker_x - 1) {
                     if (value > -32768) {
-                        ss_set_pattern_val(ss, tracker_x - 2,
-                                           tracker_y + offset, value - 1);
+                        ss_set_pattern_val(ss, channel, step, value - 1);
                         updated = 1;
                     }
                 }
                 else if (x == tracker_x - 2) {
                     if (value > -32759) {
-                        ss_set_pattern_val(ss, tracker_x - 2,
-                                           tracker_y + offset, value - 10);
+                        ss_set_pattern_val(ss, channel, step, value - 10);
                         updated = 1;
                     }
                     else if (value > -32768) {
-                        ss_set_pattern_val(ss, tracker_x - 2,
-                                           tracker_y + offset, -32768);
+                        ss_set_pattern_val(ss, channel, step, -32768);
                         updated = 1;
                     }
                 }
             }
-            else if (x > 1 && x < 6) {
+            else if (pattern_key) {
                 // set loop
                 if (from_held) return 1;
+                u8 start = min(y, tracker_y) + offset;
+                u8 end = max(y, tracker_y) + offset;
                 for (u8 i = min(tracker_x, x); i <= max(tracker_x, x); i++) {
-                    ss_set_pattern_start(ss, i - 2, min(y, tracker_y) + offset);
-                    ss_set_pattern_end(ss, i - 2, max(y, tracker_y) + offset);
-                    ss_set_pattern_len(ss, i - 2,
-                                       max(y, tracker_y) + offset + 1);
+                    u8 loop_channel = bank + i - 2;
+                    ss_set_pattern_start(ss, loop_channel, start);
+                    ss_set_pattern_end(ss, loop_channel, end);
+                    ss_set_pattern_len(ss, loop_channel, end + 1);
                 }
                 updated = 1;
             }
@@ -655,18 +659,18 @@ static u8 grid_control_process_key(scene_state_t *ss, u8 x, u8 y, u8 z,
                 }
                 tracker_select = 0;
             }
-            else if (x > 1 && x < 6 && z && !from_held) {
+            else if (pattern_key && z && !from_held) {
                 if (tracker_select == 2) {
                     // set current position
                     tracker_selected = 1;
-                    ss_set_pattern_idx(ss, x - 2, offset + y);
+                    ss_set_pattern_idx(ss, bank + x - 2, offset + y);
                     tele_pattern_updated();
                     ss->grid.grid_dirty = 1;
                 }
                 else if (tracker_select == 3) {
                     // set turtle position
                     tracker_selected = 1;
-                    turtle_set_x(&ss->turtle, x - 2);
+                    turtle_set_x(&ss->turtle, bank + x - 2);
                     turtle_set_y(&ss->turtle, offset + y);
                     turtle_set_shown(&ss->turtle, 1);
                     tele_pattern_updated();
@@ -674,15 +678,15 @@ static u8 grid_control_process_key(scene_state_t *ss, u8 x, u8 y, u8 z,
                 }
                 if (tracker_set_start) {
                     // set start
-                    ss_set_pattern_start(ss, x - 2, y + offset);
+                    ss_set_pattern_start(ss, bank + x - 2, y + offset);
                     tracker_selected = 1;
                     tele_pattern_updated();
                     ss->grid.grid_dirty = 1;
                 }
                 if (tracker_set_end) {
                     // set end
-                    ss_set_pattern_end(ss, x - 2, y + offset);
-                    ss_set_pattern_len(ss, x - 2, y + offset + 1);
+                    ss_set_pattern_end(ss, bank + x - 2, y + offset);
+                    ss_set_pattern_len(ss, bank + x - 2, y + offset + 1);
                     tracker_selected = 1;
                     tele_pattern_updated();
                     ss->grid.grid_dirty = 1;
@@ -691,20 +695,24 @@ static u8 grid_control_process_key(scene_state_t *ss, u8 x, u8 y, u8 z,
             return 1;
         }
 
-        if (x > 1 && x < 6 && z) {
+        if (pattern_key && z && !from_held) {
             // pattern value selected
             if (x != tracker_x || y != tracker_y) tracker_last = 0;
             tracker_pressed = 1;
             tracker_changed = 0;
             tracker_x = x;
             tracker_y = y;
-            set_pattern_selected_value(x - 2, y);
+            set_pattern_selected_value(bank + x - 2, y);
             tele_pattern_updated();
             ss->grid.grid_dirty = 1;
         }
         else if (x == 7 && y == 0 && !from_held && z) {
             // exit tracker
             restore_last_mode(ss);
+            ss->grid.grid_dirty = 1;
+        }
+        else if (x == 7 && y == 1 && !from_held && z) {
+            toggle_pattern_bank();
             ss->grid.grid_dirty = 1;
         }
         else if (x == 0 && !from_held && z) {
@@ -722,7 +730,7 @@ static u8 grid_control_process_key(scene_state_t *ss, u8 x, u8 y, u8 z,
             if (offset < 56) set_pattern_offset(offset + 1);
             ss->grid.grid_dirty = 1;
         }
-        else if (x == 7 && y > 1 && y != 4 && y != 5 && z) {
+        else if (x == 7 && (y == 2 || y == 3) && z) {
             tracker_select = y;
             tracker_selected = 0;
         }

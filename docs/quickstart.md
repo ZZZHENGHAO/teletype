@@ -86,7 +86,7 @@ Now the metronome is off, and the `M` script will not be executed. Set `M.ACT` t
 
 ## Patterns
 
-Patterns facilitate musical data manipulation-- lists of numbers that can be used as sequences, chord sets, rhythms, or whatever you choose. Pattern memory consists four banks of 64 steps. Functions are provided for a variety of pattern creation, transformation, and playback. The most basic method of creating a pattern is by directly adding numbers to the sequence:
+Patterns facilitate musical data manipulation-- lists of numbers that can be used as sequences, chord sets, rhythms, or whatever you choose. Pattern memory contains eight patterns of 64 steps each. Functions are provided for a variety of pattern creation, transformation, and playback. The most basic method of creating a pattern is by directly adding numbers to the sequence:
 
     P.PUSH 5
     P.PUSH 11
@@ -119,7 +119,7 @@ We can change a value within the pattern directly:
 
 This changes index 0 to 12 (it was previously 5), so now we have *12, 11, 9, 3.*
 
-We've been working with pattern `0` up to this point. There are four pattern banks, and we can switch banks this way:
+We've been working with pattern `0` up to this point. There are eight patterns numbered `0–7`. Select the working pattern with `P.N`.
 
     P.N 1
 
@@ -139,9 +139,9 @@ Patterns are stored in flash with each scene!
 
 Editing patterns with scripts or from the command line isn't always ergonomic. When you'd like to visually edit patterns, TRACKER mode is the way.
 
-The `TAB` key cycles between LIVE, EDIT and TRACKER mode.  You can also get directly to TRACKER mode by pressing the `NUM LOCK` key.  TRACKER mode is the one with 4 columns of numbers on the Teletype screen.
+The `TAB` key cycles between LIVE, EDIT and TRACKER mode.  You can also get directly to TRACKER mode by pressing the `NUM LOCK` key.  TRACKER mode shows four columns at a time.
 
-The current pattern memory is displayed in these columns. Use the arrow keys to navigate. Holding ALT will jump by pages.
+Use Left and Right to move through all eight patterns. Moving between patterns `3` and `4` switches the visible bank. One dot beside the step numbers indicates tracks 1–4 and two dots indicate tracks 5–8. Up and Down move through steps. Alt+Up and Alt+Down jump by eight steps.
 
 The edit position is indicated by the brightest number. Very dim numbers indicate they are outside the pattern length.
 

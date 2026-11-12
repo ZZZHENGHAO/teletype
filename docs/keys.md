@@ -90,7 +90,7 @@ In _edit_ mode multiple lines can be selected and used with the clipboard.
 
 ## Tracker mode
 
-The tracker mode clipboard is independent of text and code clipboard.
+The tracker mode clipboard is independent of text and code clipboard. Left and Right move between banks when crossing the boundary between tracks 4 and 5.
 
 | `Key`                   | Action                                                                                |
 |-------------------------|---------------------------------------------------------------------------------------|
@@ -99,9 +99,9 @@ The tracker mode clipboard is independent of text and code clipboard.
 | **`<up>`**              | move up                                                                               |
 | **`alt-<up>`**          | move a page up                                                                        |
 | **`<left>`**            | move left                                                                             |
-| **`alt-<left>`**        | move to the very left                                                                 |
+| **`alt-<left>`**        | jump to step 0 in the current pattern                                                                 |
 | **`<right>`**           | move right                                                                            |
-| **`alt-<right>`**       | move to the very right                                                                |
+| **`alt-<right>`**       | jump to step 63 in the current pattern                                                                |
 | **`[`**                 | decrement by 1                                                                        |
 | **`]`**                 | increment by 1                                                                        |
 | **`alt-[`**             | decrement by 1 semitone                                                               |

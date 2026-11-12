@@ -11,26 +11,30 @@
 // this
 #include "teletype.h"
 
-#define FIRSTRUN_KEY 0x22
+#define NVRAM_FORMAT 0x54543801UL
 
 static grid_data_t grid_data;
 
 #if defined(__AVR32__)
+typedef char nvram_fits_reserved_flash
+    [(sizeof(nvram_data_t) <= FLASH_NVRAM_KIB * 1024UL) ? 1 : -1];
 static __attribute__((__section__(".flash_nvram"))) nvram_data_t f;
 #else
 nvram_data_t f;
 #endif
 
+static void write_scene(uint8_t preset_no, scene_state_t *scene,
+                        char (*text)[SCENE_TEXT_LINES][SCENE_TEXT_CHARS]);
 static void pack_grid(scene_state_t *scene);
 static void unpack_grid(scene_state_t *scene);
 
 u8 is_flash_fresh() {
-    return f.fresh != FIRSTRUN_KEY;
+    return f.format != NVRAM_FORMAT;
 }
 
 void flash_prepare() {
     // if it's not empty return
-    if (f.fresh != FIRSTRUN_KEY) {
+    if (is_flash_fresh()) {
         int confirm = 1;
         uint32_t counter = 0;
         int toggle = 0;
@@ -52,15 +56,9 @@ void flash_prepare() {
         print_dbg("\r\nflash size: ");
         print_dbg_ulong(sizeof(f));
 
-        // blank scene to write to flash
-        scene_state_t scene;
-        ss_init(&scene);
-
-        char text[SCENE_TEXT_LINES][SCENE_TEXT_CHARS];
-        memset(text, 0, SCENE_TEXT_LINES * SCENE_TEXT_CHARS);
-
+        // initialize_module has already initialized the working scene.
         for (uint8_t i = 0; i < SCENE_SLOTS; i++) {
-            flash_write(i, &scene, &text);
+            write_scene(i, &scene_state, &scene_text);
         }
 
         cal_data_t blank_cal_data;
@@ -70,17 +68,67 @@ void flash_prepare() {
         device_config_t device_config = { .flip = 0 };
         flashc_memcpy((void *)&f.device_config, &device_config,
                       sizeof(device_config), true);
-        flash_update_last_saved_scene(0);
-        flash_update_last_mode(M_LIVE);
-        flashc_memset8((void *)&f.fresh, FIRSTRUN_KEY, 1, true);
+        flashc_memset8((void *)&f.last_scene, 0, 1, true);
+        flashc_memset8((void *)&f.last_mode, M_LIVE, sizeof(f.last_mode), true);
+        const uint32_t format = NVRAM_FORMAT;
+        flashc_memcpy((void *)&f.format, &format, sizeof(format), true);
     }
 }
 
 void flash_write(uint8_t preset_no, scene_state_t *scene,
                  char (*text)[SCENE_TEXT_LINES][SCENE_TEXT_CHARS]) {
-    if (preset_no >= SCENE_SLOTS) return;
-    flashc_memcpy((void *)&f.scenes[preset_no].scripts, ss_scripts_ptr(scene),
-                  ss_scripts_size(EDITABLE_SCRIPT_COUNT), true);
+    if (preset_no >= SCENE_SLOTS || is_flash_fresh()) return;
+    write_scene(preset_no, scene, text);
+}
+
+static void write_scripts(nvram_scene_t *slot, scene_state_t *scene) {
+    nvram_script_t stored[EDITABLE_SCRIPT_COUNT] = { 0 };
+    for (size_t i = 0; i < EDITABLE_SCRIPT_COUNT; i++) {
+        const scene_script_t *script = &scene->scripts[i];
+        nvram_script_t *packed_script = &stored[i];
+        packed_script->length = script->l;
+        memcpy(packed_script->every, script->every,
+               sizeof(packed_script->every));
+        for (size_t j = 0; j < packed_script->length; j++) {
+            const tele_command_t *command = &script->c[j];
+            nvram_command_t *packed = &packed_script->commands[j];
+            packed->length = command->length;
+            packed->separator = command->separator;
+            packed->comment = command->comment;
+            for (size_t word = 0; word < packed->length; word++) {
+                packed->tags[word] = command->data[word].tag;
+                packed->values[word] = command->data[word].value;
+            }
+        }
+    }
+    flashc_memcpy((void *)slot->scripts, stored, sizeof(stored), true);
+}
+
+static void read_scripts(const nvram_scene_t *slot, scene_state_t *scene) {
+    for (size_t i = 0; i < EDITABLE_SCRIPT_COUNT; i++) {
+        const nvram_script_t *stored = &slot->scripts[i];
+        scene_script_t *script = &scene->scripts[i];
+        memset(script, 0, sizeof(*script));
+        script->l = stored->length <= SCRIPT_MAX_COMMANDS ? stored->length : 0;
+        memcpy(script->every, stored->every, sizeof(script->every));
+        for (size_t j = 0; j < script->l; j++) {
+            const nvram_command_t *packed = &stored->commands[j];
+            tele_command_t *command = &script->c[j];
+            if (packed->length > COMMAND_MAX_LENGTH) continue;
+            command->length = packed->length;
+            command->separator = packed->separator;
+            command->comment = packed->comment;
+            for (size_t word = 0; word < command->length; word++) {
+                command->data[word].tag = packed->tags[word];
+                command->data[word].value = packed->values[word];
+            }
+        }
+    }
+}
+
+static void write_scene(uint8_t preset_no, scene_state_t *scene,
+                        char (*text)[SCENE_TEXT_LINES][SCENE_TEXT_CHARS]) {
+    write_scripts(&f.scenes[preset_no], scene);
     flashc_memcpy((void *)&f.scenes[preset_no].patterns, ss_patterns_ptr(scene),
                   ss_patterns_size(), true);
     pack_grid(scene);
@@ -94,9 +142,8 @@ void flash_read(uint8_t preset_no, scene_state_t *scene,
                 char (*text)[SCENE_TEXT_LINES][SCENE_TEXT_CHARS],
                 uint8_t init_pattern, uint8_t init_grid,
                 uint8_t init_i2c_op_address) {
-    if (preset_no >= SCENE_SLOTS) return;
-    memcpy(ss_scripts_ptr(scene), &f.scenes[preset_no].scripts,
-           ss_scripts_size(EDITABLE_SCRIPT_COUNT));
+    if (preset_no >= SCENE_SLOTS || is_flash_fresh()) return;
+    read_scripts(&f.scenes[preset_no], scene);
     if (init_pattern) {
         memcpy(ss_patterns_ptr(scene), &f.scenes[preset_no].patterns,
                ss_patterns_size());
@@ -118,20 +165,23 @@ void flash_read(uint8_t preset_no, scene_state_t *scene,
 }
 
 uint8_t flash_last_saved_scene() {
-    return f.last_scene;
+    return is_flash_fresh() || f.last_scene >= SCENE_SLOTS ? 0 : f.last_scene;
 }
 
 void flash_update_last_saved_scene(uint8_t preset_no) {
-    if (preset_no >= SCENE_SLOTS) return;
+    if (preset_no >= SCENE_SLOTS || is_flash_fresh()) return;
     flashc_memset8((void *)&f.last_scene, preset_no, 1, true);
 }
 
 const char *flash_scene_text(uint8_t preset_no, size_t line) {
+    if (is_flash_fresh() || preset_no >= SCENE_SLOTS ||
+        line >= SCENE_TEXT_LINES)
+        return "";
     return f.scenes[preset_no].text[line];
 }
 
 tele_mode_t flash_last_mode() {
-    return f.last_mode;
+    return is_flash_fresh() ? M_LIVE : f.last_mode;
 }
 
 void flash_update_last_mode(tele_mode_t mode) {
@@ -139,20 +189,28 @@ void flash_update_last_mode(tele_mode_t mode) {
 }
 
 void flash_update_cal(cal_data_t *cal) {
+    if (is_flash_fresh()) return;
     flashc_memcpy((void *)&f.cal, cal, sizeof(cal_data_t), true);
 }
 
 void flash_get_cal(cal_data_t *cal) {
-    *cal = f.cal;
+    if (is_flash_fresh())
+        init_cal_data(cal);
+    else
+        *cal = f.cal;
 }
 
 void flash_update_device_config(device_config_t *device_config) {
+    if (is_flash_fresh()) return;
     flashc_memcpy((void *)&f.device_config, device_config,
                   sizeof(device_config_t), true);
 }
 
 void flash_get_device_config(device_config_t *device_config) {
-    *device_config = f.device_config;
+    if (is_flash_fresh())
+        device_config->flip = 0;
+    else
+        *device_config = f.device_config;
 }
 
 static void pack_grid(scene_state_t *scene) {

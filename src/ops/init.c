@@ -104,7 +104,7 @@ static void op_INIT_SCRIPT_ALL_get(const void *NOTUSED(data), scene_state_t *ss,
 static void op_INIT_P_get(const void *NOTUSED(data), scene_state_t *ss,
                           exec_state_t *NOTUSED(es), command_state_t *cs) {
     int16_t v = cs_pop(cs);
-    if (v >= 0 && v < 4) {
+    if (v >= 0 && v < PATTERN_COUNT) {
         ss_pattern_init(ss, v);
         tele_pattern_updated();
     }

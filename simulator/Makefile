@@ -1,4 +1,4 @@
-.PHONY: clean
+.PHONY: clean test
 CFLAGS=-std=c99 -g -Wall -fno-common -DSIM -I. -I../src -I../libavr32/src
 DEPS =
 OBJ = tt.o ../src/teletype.o ../src/command.o ../src/helpers.o ../src/drum_helpers.o \
@@ -31,6 +31,9 @@ tt: $(OBJ)
 
 ../src/scanner.c: ../src/scanner.rl
 	ragel -C -G2 ../src/scanner.rl -o ../src/scanner.c
+
+test: tt
+	sh test_tracker.sh
 
 clean:
 	rm -f tt

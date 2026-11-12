@@ -398,7 +398,7 @@ Does not affect the CV input (IN) or the Parameter knob (PARAM) values.
 
 ["INIT.P"]
 prototype = "INIT.P x"
-short = "clears pattern number x"
+short = "clears pattern number x (`0–7`)"
 
 ["INIT.P.ALL"]
 prototype = "INIT.P.ALL"

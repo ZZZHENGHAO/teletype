@@ -81,4 +81,4 @@ include $(MAKEFILE_PATH)
 
 # Add the git commit id to a file for use when printing out the version
 ../module/gitversion.c: ../.git/HEAD ../.git/index
-	echo "const char *git_version = \"$(shell cut -d '-' -f 1 <<< $(shell git describe --tags | cut -c 1-)) $(shell git describe --always --dirty --exclude '*' | tr '[a-z]' '[A-Z]')\";" > $@
+	echo "const char *git_version = \"$(shell git describe --tags --always | cut -d '-' -f 1) $(shell git describe --always --dirty --exclude '*' | tr '[a-z]' '[A-Z]')\";" > $@

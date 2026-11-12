@@ -185,7 +185,7 @@ def validate_toml(ops):
 
 
 def get_tt_version():
-    tag = subprocess.check_output(["git", "describe", "--tags"]) \
+    tag = subprocess.check_output(["git", "describe", "--tags", "--always"]) \
                     .decode("utf-8").split("-")[0]
     hash = subprocess.check_output(["git", "describe",
                                     "--always", "--dirty"]) \
