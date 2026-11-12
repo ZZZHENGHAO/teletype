@@ -245,7 +245,7 @@ ASFLAGS =
 
 # Extra flags to use when compiling.
 # AVR32 flash reserved for all 32 eight-pattern scene slots.
-FLASH_NVRAM_KIB = 212
+FLASH_NVRAM_KIB = 192
 CFLAGS = -fshort-enums -fno-common -DFLASH_NVRAM_KIB=$(FLASH_NVRAM_KIB)
 
 # Extra flags to use when preprocessing.

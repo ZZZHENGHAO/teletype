@@ -13,7 +13,7 @@ USB text scenes with four columns in the `#P` section load into tracks 1–4. Tr
 
 The binary flash layout has a new format marker and keeps all 32 slots. Plan to export scenes to USB with the old firmware before a future update. The standard updater erases internal flash, and the new firmware initializes scene storage and device settings after the first-run confirmation. Then restore the text scenes from USB. Calibration and device settings are outside the scene text format and will need to be set again. USB import expects files named `tt00.txt` through `tt31.txt`; exports normally use names such as `tt00s.txt`.
 
-The AVR32 build reserves 212 KiB for scene flash. The compiler checks the storage structure against that reservation, and the linker checks the program against the remaining flash. USB import and export reuse one heap-allocated working scene because the structure exceeds the target’s 8 KiB stack.
+The AVR32 build reserves 192 KiB for scene flash. Stored scripts group token tags and operands separately to remove per-token padding. The compiler checks the storage structure against that reservation, and the linker checks the program against the remaining flash. USB import and export reuse one heap-allocated working scene because the structure exceeds the target’s 8 KiB stack.
 
 ## Build and verification
 

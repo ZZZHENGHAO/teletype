@@ -15,9 +15,24 @@ typedef struct {
     uint8_t fader_states[GRID_FADER_COUNT];
 } grid_data_t;
 
+// Store tags and operands separately to avoid padding each command word.
+typedef struct {
+    int16_t values[COMMAND_MAX_LENGTH];
+    uint8_t tags[COMMAND_MAX_LENGTH];
+    uint8_t length;
+    int8_t separator;
+    bool comment;
+} nvram_command_t;
+
+typedef struct {
+    nvram_command_t commands[SCRIPT_MAX_COMMANDS];
+    every_count_t every[SCRIPT_MAX_COMMANDS];
+    uint8_t length;
+} nvram_script_t;
+
 // NVRAM data structure located in the flash array.
 typedef struct {
-    scene_script_t scripts[EDITABLE_SCRIPT_COUNT];  // Exclude TEMP script
+    nvram_script_t scripts[EDITABLE_SCRIPT_COUNT];
     scene_pattern_t patterns[PATTERN_COUNT];
     grid_data_t grid_data;
     char text[SCENE_TEXT_LINES][SCENE_TEXT_CHARS];
@@ -27,7 +42,7 @@ typedef struct {
     nvram_scene_t scenes[SCENE_SLOTS];
     uint8_t last_scene;
     tele_mode_t last_mode;
-    uint8_t fresh;
+    uint32_t format;
     cal_data_t cal;
     device_config_t device_config;
 } nvram_data_t;
